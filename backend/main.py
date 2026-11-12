@@ -187,6 +187,7 @@ async def create_session():
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(url, headers=headers, json={"dynamic_variables": {}})
     if r.status_code >= 400:
+        print("CARTESIA SESSION ERROR:", r.status_code, r.text)
         raise HTTPException(502, "Session creation failed")
     if r.status_code >= 400:
         print("CARTESIA SESSION ERROR:", r.status_code, r.text)
