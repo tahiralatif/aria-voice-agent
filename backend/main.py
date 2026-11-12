@@ -31,6 +31,9 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
+# HTTPS email API (use this on Railway Free/Trial/Hobby, where SMTP is blocked)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM = os.getenv("RESEND_FROM", "") or "Aria <onboarding@resend.dev>"
 ORGANIZER_EMAIL = os.getenv("ORGANIZER_EMAIL", "")
 SEND_CONFIRMATION_TO_CALLER = os.getenv("SEND_CONFIRMATION_TO_CALLER", "false").lower() == "true"
 AGENCY_NAME = os.getenv("AGENCY_NAME", "Skyline Properties")
@@ -186,9 +189,6 @@ async def create_session():
     headers = {"X-API-Key": CARTESIA_API_KEY, "Cartesia-Version": CARTESIA_VERSION}
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(url, headers=headers, json={"dynamic_variables": {}})
-    if r.status_code >= 400:
-        print("CARTESIA SESSION ERROR:", r.status_code, r.text)
-        raise HTTPException(502, "Session creation failed")
     if r.status_code >= 400:
         print("CARTESIA SESSION ERROR:", r.status_code, r.text)
         raise HTTPException(502, "Session creation failed")
@@ -430,6 +430,21 @@ class RegisterIn(BaseModel):
 
 
 def send_mail(msg: EmailMessage) -> str:
+    if RESEND_API_KEY:
+        try:
+            payload = {"from": RESEND_FROM, "to": [msg["To"]], "subject": str(msg["Subject"]),
+                       "text": msg.get_content()}
+            if msg["Reply-To"]:
+                payload["reply_to"] = str(msg["Reply-To"])
+            r = httpx.post("https://api.resend.com/emails", json=payload, timeout=15,
+                           headers={"Authorization": f"Bearer {RESEND_API_KEY}"})
+            if r.status_code >= 400:
+                print("RESEND ERROR:", r.status_code, r.text)
+                return "failed"
+            return "sent"
+        except Exception as e:
+            print("RESEND ERROR:", repr(e))
+            return "failed"
     if not (SMTP_HOST and SMTP_USER and SMTP_PASSWORD):
         return "not_configured"
     try:
@@ -438,7 +453,8 @@ def send_mail(msg: EmailMessage) -> str:
             s.login(SMTP_USER, SMTP_PASSWORD)
             s.send_message(msg)
         return "sent"
-    except Exception:
+    except Exception as e:
+        print("SMTP ERROR:", repr(e))
         return "failed"
 
 
